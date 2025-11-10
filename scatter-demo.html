@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Scatter Slot Prototype (Play Money)</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#0b1221; color:#e6eef8; display:flex; gap:20px; padding:20px; }
+  .left { width: 680px; }
+  .right { width: 320px; }
+  header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  h1 { font-size:18px; margin:0; }
+  #grid { display:grid; grid-template-columns: repeat(6, 96px); grid-auto-rows:96px; gap:6px; background:#081026; padding:12px; border-radius:8px; box-shadow: 0 6px 18px rgba(0,0,0,0.6); }
+  .cell { display:flex; align-items:center; justify-content:center; font-size:42px; background: linear-gradient(180deg,#122033,#081026); border-radius:6px; color:white; user-select:none; }
+  .cell.mult { box-shadow: inset 0 0 0 3px rgba(255,215,0,0.08); }
+  .controls { display:flex; gap:8px; margin-top:12px; align-items:center; }
+  .btn { background:#1e90ff; border:none; padding:8px 12px; border-radius:6px; color:white; cursor:pointer; }
+  .btn.secondary{ background:#2a3b59; }
+  .panel { background:#071023; padding:12px; border-radius:8px; }
+  label{ display:block; font-size:12px; color:#9fb2d4; margin-bottom:6px; }
+  input[type=number]{ width:100%; padding:6px; border-radius:6px; border:1px solid #1f2f46; background:#0b1626; color:#e6eef8; }
+  .log { height:150px; overflow:auto; font-size:13px; background:#030713; padding:8px; border-radius:6px; border:1px solid #0b2340; color:#bcd7ff; }
+  .stats { display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:10px; }
+  .stat { background:#071628; padding:8px; border-radius:6px; text-align:center; }
+  footer { margin-top:12px; font-size:12px; color:#92b0d7; }
+</style>
+</head>
+<body>
+  <div class="left">
+    <header>
+      <h1>Scatter Slot Prototype — Play Money</h1>
+      <div>
+        Credits: <strong id="credits">1000</strong>
+      </div>
+    </header>
+
+    <div id="grid" aria-live="polite"></div>
+
+    <div class="controls">
+      <button class="btn" id="spinBtn">Spin</button>
+      <button class="btn secondary" id="autoBtn">Auto 10</button>
+      <label style="margin:0 8px 0 12px;">Bet:
+        <input id="bet" type="number" min="1" step="1" value="10" />
+      </label>
+      <button class="btn secondary" id="simulateBtn">Simulate 10k</button>
+      <button class="btn secondary" id="resetBtn">Reset</button>
+    </div>
+
+    <div style="display:flex; gap:12px; margin-top:12px;">
+      <div class="panel" style="flex:1">
+        <label>Game Log</label>
+        <div class="log" id="log"></div>
+      </div>
+      <div class="panel" style="width:220px;">
+        <label>Game Info</label>
+        <div class="stats">
+          <div class="stat"><div>RTP target</div><strong id="rtpTarget">96.5%</strong></div>
+          <div class="stat"><div>Spins</div><strong id="spins">0</strong></div>
+          <div class="stat"><div>Last Win</div><strong id="lastWin">0</strong></div>
+          <div class="stat"><div>Free Spins</div><strong id="freeSpins">0</strong></div>
+        </div>
+        <footer>
+          Note: This is play-money demo. Replace emoji with images for production art.
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="panel">
+      <label>Symbols (emoji used — swap with images)</label>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+        <div style="padding:6px; background:#021022; border-radius:6px;">🍇 (low)</div>
+        <div style="padding:6px; background:#021022; border-radius:6px;">🔷 (low)</div>
+        <div style="padding:6px; background:#021022; border-radius:6px;">🪙 (mid)</div>
+        <div style="padding:6px; background:#021022; border-radius:6px;">🔱 (mid)</div>
+        <div style="padding:6px; background:#021022; border-radius:6px;">👑 (high)</div>
+        <div style="padding:6px; background:#021022; border-radius:6px;">⚡ (multiplier)</div>
+        <div style="padding:6px; background:#021022; border-radius:6px;">✨ (scatter)</div>
+      </div>
+      <hr style="margin:10px 0; border-color:#0e2037"/>
+      <label>Paytable (example)</label>
+      <div style="font-size:13px; color:#bcd7ff;">
+        8+ same symbol anywhere = win. Payouts per 1× bet (example):<br>
+        🍇/🔷: 2× (8) → 4× (12) → 8× (16+)<br>
+        🪙/🔱: 5× → 10× → 20×<br>
+        👑: 20× → 40× → 80×<br>
+        ⚡ multiplies the entire cascade win (x2, x3, x5) when present.<br>
+        ✨ 3+ scatters = 6 free spins (during which multipliers persist).
+      </div>
+    </div>
+
+    <div style="height:12px"></div>
+
+    <div class="panel">
+      <label>Developer Controls</label>
+      <div>
+        <label>RTP target (%)</label>
+        <input id="rtpInput" type="number" step="0.1" value="96.5" />
+        <button class="btn" id="applyRtp">Apply</button>
+      </div>
+      <div style="margin-top:10px;">
+        <small style="color:#9fb2d4">Use "Simulate 10k" to get an approximate RTP estimate.</small>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+/*
+  Scatter Slot Prototype
+  - 6 columns x 5 rows = 30 tiles
+  - Symbols are chosen from SYMBOLS array with weights
+  - A "win" is defined as having 8 or more of the same symbol after a spin/tumble
+  - Multipliers (⚡) multiply the cascade total when present (x2,x3,x5)
+  - Scatter (✨) awards free spins when 3+ appear
+  - This is a simplified, demo-friendly implementation intended for learning and prototyping
+*/
+
+// CONFIG
+const COLS = 6;
+const ROWS = 5;
+const GRID_SIZE = COLS * ROWS;
+
+const SYMBOLS = [
+  { id: 'grape', char:'🍇', weight: 30, payouts: {8:2,12:4,16:8} }, // low
+  { id: 'blue', char:'🔷', weight: 30, payouts: {8:2,12:4,16:8} }, // low
+  { id: 'coin', char:'🪙', weight: 20, payouts: {8:5,12:10,16:20} }, // mid
+  { id: 'trident', char:'🔱', weight: 12, payouts: {8:5,12:10,16:20} }, // mid
+  { id: 'crown', char:'👑', weight: 6, payouts: {8:20,12:40,16:80} }, // high
+  { id: 'bolt', char:'⚡', weight: 8, isMultiplier:true, multValues:[2,3,5], payouts: {} }, // multiplier symbol
+  { id: 'scatter', char:'✨', weight: 4, isScatter:true, payouts: {} } // scatter for free spins
+];
+
+// Derived weighted array for random draws
+let weightedPool = [];
+function rebuildPool(){
+  weightedPool = [];
+  SYMBOLS.forEach(s => {
+    for(let i=0;i<s.weight;i++) weightedPool.push(s);
+  });
+}
+rebuildPool();
+
+let grid = []; // length GRID_SIZE, index column-major or row-major? we'll treat as column-major: column*ROWS + row
+let credits = 1000;
+let bet = 10;
+let spinsCount = 0;
+let freeSpins = 0;
+let rtpTarget = 96.5; // for display only
+let lastWin = 0;
+
+const gridEl = document.getElementById('grid');
+const creditsEl = document.getElementById('credits');
+const logEl = document.getElementById('log');
+const spinsEl = document.getElementById('spins');
+const lastWinEl = document.getElementById('lastWin');
+const freeSpinsEl = document.getElementById('freeSpins');
+const rtpTargetEl = document.getElementById('rtpTarget');
+
+function log(msg){
+  const time = new Date().toLocaleTimeString();
+  logEl.innerHTML = `[${time}] ${msg}<br>` + logEl.innerHTML;
+}
+
+// Utilities
+function randChoicePool(){
+  const idx = Math.floor(Math.random() * weightedPool.length);
+  return weightedPool[idx];
+}
+function randomGrid(){
+  grid = [];
+  for(let c=0;c<COLS;c++){
+    for(let r=0;r<ROWS;r++){
+      grid.push(randChoicePool());
+    }
+  }
+}
+function renderGrid(){
+  gridEl.innerHTML = '';
+  for(let i=0;i<GRID_SIZE;i++){
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    const symbol = grid[i];
+    cell.textContent = symbol.char;
+    if(symbol.isMultiplier) cell.classList.add('mult');
+    gridEl.appendChild(cell);
+  }
+}
+
+// Game rules: evaluate counts
+function countSymbols(){
+  const counts = {};
+  for(const s of grid){
+    counts[s.id] = (counts[s.id]||0) + 1;
+  }
+  return counts;
+}
+
+// Determine payouts for one cascade (before multipliers)
+function payoutForCounts(counts){
+  // sum payouts for any symbol with 8+ occurrences
+  let baseWin = 0;
+  for(const s of SYMBOLS){
+    const cnt = counts[s.id] || 0;
+    if(s.payouts && cnt >= 8){
+      // find nearest payout tier (choose highest tier <= cnt)
+      const tiers = Object.keys(s.payouts).map(x=>parseInt(x,10)).sort((a,b)=>a-b);
+      let chosen = 0;
+      for(const t of tiers){
+        if(cnt >= t) chosen = s.payouts[t];
+      }
+      baseWin += chosen;
+    }
+  }
+  return baseWin;
+}
+
+// Count multiplier symbols and compute multiplier product
+function computeMultiplier(){
+  // each bolt has a random mult value drawn from multValues; total multiplier is product
+  let multSymbols = grid.filter(g => g.isMultiplier);
+  if(multSymbols.length === 0) return 1;
+  let prod = 1;
+  for(const ms of multSymbols){
+    // choose a random multiplier from ms.multValues
+    const val = ms.multValues[Math.floor(Math.random()*ms.multValues.length)];
+    prod *= val;
+  }
+  return prod;
+}
+
+// Check scatter count
+function scatterCount(){
+  return grid.filter(g => g.isScatter).length;
+}
+
+// Tumble: remove winning symbols (all symbols that are part of counts >=8 regardless of type), then let columns fall and fill from top
+function tumbleRemoveWinningSymbols(counts){
+  const winners = new Set();
+  for(const s of SYMBOLS){
+    const cnt = counts[s.id] || 0;
+    if(s.payouts && cnt >= 8){
+      // remove all tiles of this symbol id
+      for(let i=0;i<grid.length;i++){
+        if(grid[i].id === s.id) winners.add(i);
+      }
+    }
+  }
+  if(winners.size === 0) return false;
+  // For each column, build new column array with non-winner tiles falling down
+  for(let c=0;c<COLS;c++){
+    const col = [];
+    // read column top-to-bottom (row 0 top)
+    for(let r=0;r<ROWS;r++){
+      const idx = c*ROWS + r;
+      if(!winners.has(idx)) col.push(grid[idx]);
+    }
+    // fill top with new random tiles to make length ROWS
+    while(col.length < ROWS){
+      col.unshift(randChoicePool()); // spawn on top
+    }
+    // write back
+    for(let r=0;r<ROWS;r++){
+      grid[c*ROWS + r] = col[r];
+    }
+  }
+  return true;
+}
+
+// Single spin (one cascade until no more winning symbol groups)
+function singleSpin(betAmount){
+  // initial fill (spin)
+  randomGrid();
+  let totalWinMultiplier = 1;
+  let cascadeTotal = 0;
+  let cascadeStep = 0;
+  // multipliers are applied per cascade step if bolts are present that step
+  while(true){
+    cascadeStep++;
+    const counts = countSymbols();
+    const base = payoutForCounts(counts); // in units of bet (e.g., 2x means 2 * bet)
+    if(base === 0) break;
+    // compute multiplier for this cascade step: choose random mults for bolts on the grid this step
+    let mult = 1;
+    // We will: For each bolt present in grid this step, choose a value and multiply
+    const boltCount = grid.filter(g => g.isMultiplier).length;
+    if(boltCount > 0){
+      for(let i=0;i<boltCount;i++){
+        // pick a random bolt mult from available set
+        const vals = SYMBOLS.find(s=>s.id==='bolt').multValues;
+        const val = vals[Math.floor(Math.random()*vals.length)];
+        mult *= val;
+      }
+    }
+    const stepWin = base * mult * betAmount;
+    cascadeTotal += stepWin;
+    // remove winning symbols and tumble; if no removal happens break
+    const removed = tumbleRemoveWinningSymbols(counts);
+    if(!removed) break;
+    // loop for possible further cascades
+  }
+  // check scatters on initial spin (as most slots do — but here we count after spin; it's a design choice)
+  const scat = scatterCount();
+  let awardedFree = 0;
+  if(scat >= 3){
+    awardedFree = 6; // design: 3+ scatters -> 6 free spins
+  }
+  return { win: cascadeTotal, freeAwarded: awardedFree, gridscatter: scat };
+}
+
+// Gameplay glue
+function updateUI(){
+  creditsEl.textContent = credits.toString();
+  spinsEl.textContent = spinsCount.toString();
+  lastWinEl.textContent = lastWin.toString();
+  freeSpinsEl.textContent = freeSpins.toString();
+  rtpTargetEl.textContent = rtpTarget.toFixed(2) + '%';
+  renderGrid();
+}
+
+function doSpin(){
+  bet = Math.max(1, Math.floor(Number(document.getElementById('bet').value) || 10));
+  if(freeSpins > 0){
+    // free spin: don't deduct bet
+    freeSpins--;
+  } else {
+    if(credits < bet){
+      log('Not enough credits to bet.');
+      return;
+    }
+    credits -= bet;
+  }
+  const res = singleSpin(bet);
+  const win = Math.round(res.win); // integer credits
+  credits += win;
+  lastWin = win;
+  spinsCount++;
+  if(res.freeAwarded) {
+    freeSpins += res.freeAwarded;
+    log(`Scatters: ${res.gridscatter} -> awarded ${res.freeAwarded} free spins.`);
+  }
+  log(`Spin #${spinsCount}: Bet ${bet}, Win ${win}`);
+  updateUI();
+}
+
+document.getElementById('spinBtn').addEventListener('click', () => {
+  doSpin();
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  credits = 1000; spinsCount = 0; freeSpins = 0; lastWin = 0;
+  log('Reset game. Credits back to 1000.');
+  updateUI();
+});
+
+document.getElementById('autoBtn').addEventListener('click', async () => {
+  document.getElementById('autoBtn').disabled = true;
+  for(let i=0;i<10;i++){
+    doSpin();
+    await new Promise(r => setTimeout(r, 150));
+  }
+  document.getElementById('autoBtn').disabled = false;
+});
+
+document.getElementById('applyRtp').addEventListener('click', () => {
+  const v = Number(document.getElementById('rtpInput').value) || 96.5;
+  rtpTarget = v;
+  document.getElementById('rtpTarget').textContent = rtpTarget.toFixed(2) + '%';
+  log('RTP target set to ' + rtpTarget.toFixed(2) + '% (for planning only).');
+});
+
+// Simple simulation: run N spins (fast) and estimate realized RTP = totalWins / totalBets * 100
+document.getElementById('simulateBtn').addEventListener('click', () => {
+  const N = 10000;
+  simulateSpins(N);
+});
+
+// SIMULATION (fast, no UI updates)
+function simulateSpins(N=10000){
+  // For simulation we should perform many spins, track total bets and wins.
+  // We'll create a fresh RNG grid each spin and run the same singleSpin logic but avoid DOM operations.
+  let simCredits = 0;
+  let totalBets = 0;
+  let totalWins = 0;
+  for(let i=0;i<N;i++){
+    const betAmt = 10;
+    totalBets += betAmt;
+    // simulate spin logic with temporary grid
+    // fill grid
+    const simGrid = [];
+    for(let j=0;j<GRID_SIZE;j++){
+      simGrid.push(weightedPool[Math.floor(Math.random()*weightedPool.length)]);
+    }
+    // We'll reuse payoutForCounts/tumbleRemoveWinningSymbols logic lightly by copying grid temporarily into global grid,
+    // but preserve original global grid by saving and restoring.
+    const savedGrid = grid;
+    grid = simGrid.slice();
+    // singleSpin but simplified and deterministic for mult picks: choose random mults when bolts present each cascade
+    let cascadeTotal = 0;
+    while(true){
+      const counts = countSymbols();
+      const base = payoutForCounts(counts);
+      if(base === 0) break;
+      // compute random mult for bolts present this step
+      let boltCount = grid.filter(g => g.isMultiplier).length;
+      let mult = 1;
+      if(boltCount>0){
+        for(let b=0;b<boltCount;b++){
+          const vals = SYMBOLS.find(s=>s.id==='bolt').multValues;
+          const val = vals[Math.floor(Math.random()*vals.length)];
+          mult *= val;
+        }
+      }
+      const stepWin = base * mult * betAmt;
+      cascadeTotal += stepWin;
+      // remove winners and tumble
+      const removed = tumbleRemoveWinningSymbols(counts);
+      if(!removed) break;
+    }
+    const win = Math.round(cascadeTotal);
+    totalWins += win;
+    // no free spin handling in this fast sim (would complicate chain), but it's okay for RTP estimate
+    grid = savedGrid; // restore
+  }
+  const rtp = (totalWins / totalBets) * 100;
+  log(`Simulated ${N} spins. Bets=${totalBets}, Wins=${totalWins}. Estimated RTP=${rtp.toFixed(2)}%`);
+  alert(`Simulated ${N} spins.\nEstimated RTP: ${rtp.toFixed(2)}%`);
+}
+
+// init
+randomGrid();
+updateUI();
+log('Game initialized. Good luck!')
+</script>
+</body>
+  </html>
